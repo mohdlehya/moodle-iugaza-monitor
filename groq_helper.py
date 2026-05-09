@@ -247,22 +247,26 @@ def summarize_calendar_events(session, events: list) -> str:
     return ask_groq(prompt, max_tokens=600)
 
 def chat_with_context(user_question: str, data: dict, events: dict) -> str:
-    """محادثة مع Groq مع كامل بيانات الطالب كـ context"""
     import time as _time
 
-    # ── بناء ملخص المساقات
+    # ── بناء ملخص المساقات مع الروابط
     courses_text = ""
     for course, content in data.items():
-        files   = len(content.get("files", []))
+        files   = content.get("files", [])
         assigns = content.get("assignments", [])
         quizzes = content.get("quizzes", [])
-        courses_text += f"\n• {course}: {files} ملف، {len(assigns)} واجب، {len(quizzes)} كويز"
+        courses_text += f"\n\n📚 {course}:"
+        courses_text += f"\n  الملفات ({len(files)}):"
+        for f in files:
+            courses_text += f"\n    - {f['name']} | رابط: {f['url']}"
+        courses_text += f"\n  الواجبات ({len(assigns)}):"
         for a in assigns:
-            courses_text += f"\n  - واجب: {a['name']}"
+            courses_text += f"\n    - {a['name']} | رابط: {a['url']}"
+        courses_text += f"\n  الكويزات ({len(quizzes)}):"
         for q in quizzes:
-            courses_text += f"\n  - كويز: {q['name']}"
+            courses_text += f"\n    - {q['name']} | رابط: {q['url']}"
 
-    # ── بناء ملخص المواعيد القادمة
+    # ── بناء المواعيد القادمة
     now = int(_time.time())
     upcoming = sorted(
         [e for e in events.values() if e["timestamp"] > now],
@@ -278,19 +282,22 @@ def chat_with_context(user_question: str, data: dict, events: dict) -> str:
         days      = remaining // 86400
         hours     = (remaining % 86400) // 3600
         time_left = f"بعد {days}ي {hours}س" if days > 0 else f"بعد {hours} ساعة ⚠️"
-        events_text += f"\n• {e['name']} — {e['course']} — {label}: {dt} ({time_left})"
+        events_text += f"\n• {e['name']} — {e['course']} — {label}: {dt} ({time_left}) | رابط: {e.get('action_url', e['url'])}"
 
-    system_prompt = f"""أنت مساعد ذكي لطالب جامعي في جامعة الإسلامية غزة.
-لديك كامل بيانات الطالب من نظام Moodle.
+    system_prompt = f"""أنت مساعد ذكي لطالب جامعي في الجامعة الإسلامية غزة.
+لديك كامل بيانات الطالب من Moodle بما في ذلك روابط كل ملف وواجب وكويز.
 
-📚 المساقات والمحتوى:
+📚 المساقات والمحتوى مع الروابط:
 {courses_text if courses_text else "لا توجد بيانات"}
 
 📅 المواعيد القادمة:
 {events_text if events_text else "لا توجد مواعيد"}
 
-أجب على أسئلة الطالب بالعربي بشكل مفيد ودقيق بناءً على بياناته الفعلية أعلاه.
-كن موجزاً وعملياً. إذا سأل عن شيء غير موجود في البيانات، أخبره بصدق."""
+تعليمات مهمة:
+- عندما يطلب الطالب رابطاً لأي ملف أو واجب أو كويز، أعطه الرابط الكامل من البيانات أعلاه
+- الروابط تبدأ بـ https://moodle.iugaza.edu.ps
+- أجب بالعربي دائماً
+- كن دقيقاً وموجزاً"""
 
     if not GROQ_API_KEY:
         return "⚠️ GROQ_API_KEY غير موجود"
@@ -307,8 +314,8 @@ def chat_with_context(user_question: str, data: dict, events: dict) -> str:
                     {"role": "system", "content": system_prompt},
                     {"role": "user",   "content": user_question}
                 ],
-                "max_tokens":  600,
-                "temperature": 0.5
+                "max_tokens":  700,
+                "temperature": 0.3
             },
             timeout=25
         )
