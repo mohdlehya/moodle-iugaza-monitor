@@ -9,9 +9,14 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL   = "llama-3.1-8b-instant"
 GROQ_URL     = "https://api.groq.com/openai/v1/chat/completions"
 
+if not GROQ_API_KEY:
+    print("⚠️ GROQ_API_KEY غير موجود في environment variables")
+else:
+    print(f"✅ GROQ_API_KEY موجود: {GROQ_API_KEY[:8]}...", flush=True)
+
 
 # ══════════════════════════════════════
-# استدعاء Groq
+# استدعاء Groq API
 # ══════════════════════════════════════
 
 def ask_groq(prompt: str, max_tokens: int = 500) -> str:
@@ -43,7 +48,6 @@ def ask_groq(prompt: str, max_tokens: int = 500) -> str:
 # ══════════════════════════════════════
 
 def scrape_moodle_page(session, url: str) -> dict:
-    """يجلب كل التفاصيل من صفحة كويز أو واجب"""
     result = {
         "description": "",
         "time_open":   "",
@@ -59,11 +63,9 @@ def scrape_moodle_page(session, url: str) -> dict:
         r    = session.get(url, timeout=25)
         soup = BeautifulSoup(r.text, "html.parser")
 
-        # احذف العناصر غير المفيدة
         for tag in soup(["script", "style", "nav", "header", "footer", "aside"]):
             tag.decompose()
 
-        # ── الوصف / التعليمات
         for sel in [
             "#intro", ".generalbox.intro",
             ".activity-description",
@@ -76,7 +78,6 @@ def scrape_moodle_page(session, url: str) -> dict:
                 result["description"] = el.get_text(separator=" ", strip=True)[:800]
                 break
 
-        # ── جدول تفاصيل الكويز/الواجب
         for table in soup.select("table.generaltable"):
             for row in table.select("tr"):
                 cells = row.find_all(["th", "td"])
@@ -98,10 +99,10 @@ def scrape_moodle_page(session, url: str) -> dict:
                 elif any(k in label for k in ["submission status", "حالة"]):
                     result["status"] = value
 
-        # ── نص كامل احتياطي
         main = soup.select_one("#region-main, .maincontent, main")
         if main:
-            result["raw_text"] = re.sub(r'\s+', ' ', main.get_text(separator=" ", strip=True))[:1500]
+            result["raw_text"] = re.sub(r'\s+', ' ',
+                main.get_text(separator=" ", strip=True))[:1500]
 
     except Exception as e:
         print(f"⚠️ فشل scraping: {e}")
@@ -124,31 +125,31 @@ def summarize_quiz(session, name: str, url: str, course: str,
     attempts   = details["attempts"]   or "غير محدد"
     desc       = details["description"] or event_description or details["raw_text"] or "لا يوجد وصف"
 
-    prompt = f"""أنت مساعد طالب جامعي ذكي. لخّص هذا الكويز بالعربي بشكل واضح.
+    prompt = f"""أنت مساعد طالب جامعي ذكي. لخّص هذا الكويز بالعربي.
 
 📌 اسم الكويز: {name}
 📚 المساق: {course}
 🕐 يفتح: {time_open}
 🔴 يغلق: {time_close}
 ⏱ مدة الكويز: {time_limit}
-🔁 عدد المحاولات: {attempts}
-📋 الوصف والمحتوى:
+🔁 عدد المحاولات: {attempts} (رقم 1 يعني محاولة واحدة فقط)
+📋 الوصف:
 {desc}
 
-اكتب ملخصاً منظماً يشمل:
+اكتب ملخصاً يشمل:
 1. 📌 موضوع الكويز في جملة
-2. 📚 المواضيع والمحتوى المغطى (نقاط)
-3. ⏰ وقت البداية والنهاية ومدة الكويز
+2. 📚 المواضيع المغطاة (نقاط)
+3. ⏰ وقت البداية والنهاية والمدة
 4. 🔁 عدد المحاولات المتاحة
 5. ⚠️ تنبيه عاجل إذا كان الموعد قريباً
 
-اكتب بالعربي فقط، موجز ولا يتجاوز 8 أسطر."""
+اكتب بالعربي فقط، لا تتجاوز 8 أسطر."""
 
     return ask_groq(prompt, max_tokens=400)
 
 
 # ══════════════════════════════════════
-# تلخيص واجب/Assignment
+# تلخيص واجب
 # ══════════════════════════════════════
 
 def summarize_assignment(session, name: str, url: str, course: str,
@@ -160,7 +161,7 @@ def summarize_assignment(session, name: str, url: str, course: str,
     status   = details["status"]   or "لم يُسلَّم"
     desc     = details["description"] or event_description or details["raw_text"] or "لا يوجد وصف"
 
-    prompt = f"""أنت مساعد طالب جامعي ذكي. لخّص هذا الواجب بالعربي بشكل واضح.
+    prompt = f"""أنت مساعد طالب جامعي ذكي. لخّص هذا الواجب بالعربي.
 
 📌 اسم الواجب: {name}
 📚 المساق: {course}
@@ -169,24 +170,23 @@ def summarize_assignment(session, name: str, url: str, course: str,
 📄 تفاصيل الواجب:
 {desc}
 
-اكتب ملخصاً منظماً يشمل:
-1. 📌 المطلوب من الطالب بدقة
-2. 📋 التفاصيل والمتطلبات المهمة (نقاط)
+اكتب ملخصاً يشمل:
+1. 📌 المطلوب بدقة
+2. 📋 المتطلبات المهمة (نقاط)
 3. ⏰ موعد التسليم بوضوح
-4. 💡 نصيحة سريعة للتنفيذ
+4. 💡 نصيحة سريعة
 5. ⚠️ تنبيه إذا كان الموعد عاجلاً
 
-اكتب بالعربي فقط، موجز ولا يتجاوز 8 أسطر."""
+اكتب بالعربي فقط، لا تتجاوز 8 أسطر."""
 
     return ask_groq(prompt, max_tokens=400)
 
 
 # ══════════════════════════════════════
-# تلخيص أحداث التقويم الجديدة
+# تلخيص أحداث التقويم
 # ══════════════════════════════════════
 
 def summarize_calendar_events(session, events: list) -> str:
-    """يلخص كل أحداث التقويم الجديدة مع تصفح روابطها"""
     if not events:
         return ""
 
@@ -201,7 +201,6 @@ def summarize_calendar_events(session, events: list) -> str:
         hours     = (remaining % 86400) // 3600
         time_left = f"بعد {days} يوم و{hours} ساعة" if days > 0 else f"بعد {hours} ساعة فقط ⚠️"
 
-        # جلب تفاصيل إضافية من الصفحة
         page_details = {}
         if session:
             try:
@@ -209,14 +208,13 @@ def summarize_calendar_events(session, events: list) -> str:
             except:
                 pass
 
-        event_info = f"""
-• [{e['type'].upper()}] {e['name']}
-  المساق: {e['course_full']}
-  {label}: {dt_str} ({time_left})"""
-
+        event_info = (
+            f"\n• [{e['type'].upper()}] {e['name']}"
+            f"\n  المساق: {e['course_full']}"
+            f"\n  {label}: {dt_str} ({time_left})"
+        )
         if e.get("description"):
             event_info += f"\n  الوصف: {e['description'][:300]}"
-
         if page_details.get("time_open"):
             event_info += f"\n  يفتح: {page_details['time_open']}"
         if page_details.get("time_close"):
@@ -232,12 +230,13 @@ def summarize_calendar_events(session, events: list) -> str:
 
     all_events_text = "\n".join(events_lines)
 
-    prompt = f"""أنت مساعد طالب جامعي ذكي. لديك هذه التحديثات الجديدة من Moodle:
+    prompt = f"""أنت مساعد طالب جامعي ذكي. اكتب بالعربي الفصحى فقط، لا تستخدم أي لغة أخرى أبداً.
+لديك هذه التحديثات الجديدة من Moodle:
 
 {all_events_text}
 
-اكتب تقريراً ذكياً بالعربي يشمل:
-1. 🗓 ملخص سريع لكل حدث (اسمه، موعده، مدته إن وُجدت)
+اكتب تقريراً يشمل:
+1. 🗓 ملخص سريع لكل حدث (اسمه، موعده، مدته)
 2. ⚠️ الأحداث العاجلة التي تحتاج اهتماماً فورياً
 3. 📋 ترتيب الأولويات للطالب
 4. 💡 نصيحة تنظيمية للأسبوع
@@ -246,28 +245,44 @@ def summarize_calendar_events(session, events: list) -> str:
 
     return ask_groq(prompt, max_tokens=600)
 
-def chat_with_context(user_question: str, data: dict, events: dict) -> str:
-    import time as _time
 
-    # ── بناء ملخص المساقات مع الروابط
+# ══════════════════════════════════════
+# محادثة مع Groq مع context كامل
+# ══════════════════════════════════════
+
+def chat_with_context(user_question: str, data: dict, events: dict) -> str:
+
+    # ── خريطة أسماء المساقات
+    course_map = "\n".join([f"  - {name}" for name in data.keys()])
+
+    # ── بناء context المساقات مع اسم المساق في كل سطر
     courses_text = ""
     for course, content in data.items():
         files   = content.get("files", [])
         assigns = content.get("assignments", [])
         quizzes = content.get("quizzes", [])
-        courses_text += f"\n\n📚 {course}:"
-        courses_text += f"\n  الملفات ({len(files)}):"
-        for f in files:
-            courses_text += f"\n    - {f['name']} | رابط: {f['url']}"
-        courses_text += f"\n  الواجبات ({len(assigns)}):"
-        for a in assigns:
-            courses_text += f"\n    - {a['name']} | رابط: {a['url']}"
-        courses_text += f"\n  الكويزات ({len(quizzes)}):"
-        for q in quizzes:
-            courses_text += f"\n    - {q['name']} | رابط: {q['url']}"
+
+        courses_text += f"\n\n{'='*50}"
+        courses_text += f"\n📚 المساق: [{course}]"
+        courses_text += f"\n{'='*50}"
+
+        if files:
+            courses_text += f"\n  📄 الملفات ({len(files)}):"
+            for f in files:
+                courses_text += f"\n    [{course}] {f['name']} → {f['url']}"
+
+        if assigns:
+            courses_text += f"\n  📝 الواجبات ({len(assigns)}):"
+            for a in assigns:
+                courses_text += f"\n    [{course}] {a['name']} → {a['url']}"
+
+        if quizzes:
+            courses_text += f"\n  ❓ الكويزات ({len(quizzes)}):"
+            for q in quizzes:
+                courses_text += f"\n    [{course}] {q['name']} → {q['url']}"
 
     # ── بناء المواعيد القادمة
-    now = int(_time.time())
+    now = int(time.time())
     upcoming = sorted(
         [e for e in events.values() if e["timestamp"] > now],
         key=lambda x: x["timestamp"]
@@ -275,29 +290,37 @@ def chat_with_context(user_question: str, data: dict, events: dict) -> str:
 
     events_text = ""
     for e in upcoming:
-        from datetime import datetime
         dt        = datetime.fromtimestamp(e["timestamp"]).strftime("%A %d/%m/%Y %I:%M %p")
         label     = {"due": "تسليم", "close": "يغلق", "open": "يفتح"}.get(e["event_type"], "")
         remaining = e["timestamp"] - now
         days      = remaining // 86400
         hours     = (remaining % 86400) // 3600
         time_left = f"بعد {days}ي {hours}س" if days > 0 else f"بعد {hours} ساعة ⚠️"
-        events_text += f"\n• {e['name']} — {e['course']} — {label}: {dt} ({time_left}) | رابط: {e.get('action_url', e['url'])}"
+        events_text += (
+            f"\n• [{e['type'].upper()}] {e['name']}"
+            f" — {e['course']}"
+            f" — {label}: {dt} ({time_left})"
+            f" | رابط: {e.get('action_url', e['url'])}"
+        )
 
     system_prompt = f"""أنت مساعد ذكي لطالب جامعي في الجامعة الإسلامية غزة.
-لديك كامل بيانات الطالب من Moodle بما في ذلك روابط كل ملف وواجب وكويز.
+لديك قاعدة بيانات كاملة من Moodle بما في ذلك روابط كل ملف وواجب وكويز.
 
-📚 المساقات والمحتوى مع الروابط:
+قائمة المساقات المتاحة:
+{course_map}
+
+قواعد مهمة:
+1. كل سطر في البيانات يبدأ بـ [اسم المساق] — استخدمه للتمييز الدقيق بين المساقات
+2. عند طلب مساق معين ابحث عن رمزه (مثل SDEV3309) أو اسمه في البيانات
+3. أعطِ الروابط الكاملة (https://...) عند طلبها دون تقصير
+4. إذا لم تجد المعلومة بالضبط، قل ذلك بصدق
+5. اكتب بالعربي الفصحى دائماً
+
+📚 البيانات الكاملة مع الروابط:
 {courses_text if courses_text else "لا توجد بيانات"}
 
 📅 المواعيد القادمة:
-{events_text if events_text else "لا توجد مواعيد"}
-
-تعليمات مهمة:
-- عندما يطلب الطالب رابطاً لأي ملف أو واجب أو كويز، أعطه الرابط الكامل من البيانات أعلاه
-- الروابط تبدأ بـ https://moodle.iugaza.edu.ps
-- أجب بالعربي دائماً
-- كن دقيقاً وموجزاً"""
+{events_text if events_text else "لا توجد مواعيد"}"""
 
     if not GROQ_API_KEY:
         return "⚠️ GROQ_API_KEY غير موجود"
@@ -309,8 +332,8 @@ def chat_with_context(user_question: str, data: dict, events: dict) -> str:
                 "Content-Type":  "application/json"
             },
             json={
-                "model":       GROQ_MODEL,
-                "messages":    [
+                "model":    GROQ_MODEL,
+                "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user",   "content": user_question}
                 ],
