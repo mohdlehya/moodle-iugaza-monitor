@@ -2,7 +2,7 @@
 ## 📄 `main.py` — نسخة نهائية كاملة
 
 
-import json, os, time, threading
+import json, os, time, sys
 from datetime import datetime
 from scraper import create_session, get_courses
 from bs4 import BeautifulSoup
@@ -17,7 +17,7 @@ load_dotenv()
 
 MOODLE_BASE = os.getenv("MOODLE_URL", "https://moodle.iugaza.edu.ps")
 
-
+SILENT_MODE = "--silent" in sys.argv
 def safe_get(session, url: str, retries: int = 3, delay: int = 4):
     for attempt in range(retries):
         try:
@@ -129,10 +129,12 @@ def find_new_items(old: dict, new: dict) -> dict:
             changes[course_name] = course_changes
     return changes
 
-
+def notify(msg: str):
+    """أرسل فقط إذا لم يكن في وضع صامت"""
+    if not SILENT_MODE:
+        send_message(msg)
 # ══════════════════════════════════════════════════════════════
 def main():
-# ══════════════════════════════════════════════════════════════
     username = os.getenv("MOODLE_USERNAME")
     password = os.getenv("MOODLE_PASSWORD")
 
@@ -141,7 +143,6 @@ def main():
     session = create_session(username, password)
     courses = get_courses(session)
 
-    # ── جلب المحتوى
     print("\n📥 جاري جلب المحتوى...")
     current_data = {}
     for course in courses:
@@ -152,9 +153,6 @@ def main():
     save_data(current_data)
     print("💾 تم حفظ البيانات")
 
-    # ══════════════════════════════════
-    # أول تشغيل
-    # ══════════════════════════════════
     if is_first_run:
         total   = sum(len(v) for c in current_data.values() for v in c.values())
         welcome = (
@@ -171,12 +169,8 @@ def main():
                 f"📝 {len(c.get('assignments', []))} واجب  |  "
                 f"❓ {len(c.get('quizzes', []))} كويز"
             )
-        send_message(welcome)
-        print("📨 تم إرسال رسالة الترحيب")
+        notify(welcome)   # ← notify بدل send_message
 
-    # ══════════════════════════════════
-    # تشغيل عادي — ابحث عن الجديد
-    # ══════════════════════════════════
     else:
         previous_data = load_previous_data()
         new_items     = find_new_items(previous_data, current_data)
@@ -184,23 +178,14 @@ def main():
         if new_items:
             print(f"\n🔬 تحليل العناصر الجديدة...")
             messages = []
-
             for course_name, changes in new_items.items():
                 msg = [f"🆕 <b>محتوى جديد — {course_name}</b>\n"]
 
-                # ── الواجبات الجديدة ──────────────────
                 for item in changes.get("assignments", []):
-                    print(f"  📝 {item['name']}")
                     info    = analyze_assignment(session, item["url"])
-                    
-                    # ← Groq هنا
-                    summary = summarize_assignment(
-                        session,
-                        name           = item["name"],
-                        url            = item["url"],
-                        course         = course_name,
-                        event_due_date = info.get("due_date", ""),
-                    )
+                    summary = summarize_assignment(session, name=item["name"],
+                              url=item["url"], course=course_name,
+                              event_due_date=info.get("due_date", ""))
                     msg.append(f"📝 <b>واجب جديد:</b> {item['name']}")
                     if info.get("due_date"):
                         msg.append(f"⏰ <b>موعد التسليم:</b> {info['due_date']}")
@@ -208,19 +193,11 @@ def main():
                         msg.append(f"\n🤖 <b>ملخص ذكي:</b>\n{summary}")
                     msg.append(f'🔗 <a href="{item["url"]}">افتح الواجب</a>\n')
 
-                # ── الكويزات الجديدة ──────────────────
                 for item in changes.get("quizzes", []):
-                    print(f"  ❓ {item['name']}")
                     info    = analyze_quiz(session, item["url"])
-                    
-                    # ← Groq هنا
-                    summary = summarize_quiz(
-                        session,
-                        name             = item["name"],
-                        url              = item["url"],
-                        course           = course_name,
-                        event_time_close = info.get("closes", ""),
-                    )
+                    summary = summarize_quiz(session, name=item["name"],
+                              url=item["url"], course=course_name,
+                              event_time_close=info.get("closes", ""))
                     msg.append(f"❓ <b>كويز جديد:</b> {item['name']}")
                     if info.get("closes"):
                         msg.append(f"🔴 <b>يغلق:</b> {info['closes']}")
@@ -228,31 +205,25 @@ def main():
                         msg.append(f"\n🤖 <b>ملخص ذكي:</b>\n{summary}")
                     msg.append(f'🔗 <a href="{item["url"]}">افتح الكويز</a>\n')
 
-                # ── الملفات الجديدة ───────────────────
                 for item in changes.get("files", []):
-                    print(f"  📄 {item['name']}")
                     msg.append(f"📄 <b>{item['name']}</b>")
                     msg.append(f'🔗 <a href="{item["url"]}">افتح الملف</a>\n')
 
                 messages.append("\n".join(msg))
 
-            for msg in messages:
-                send_message(msg)
+            for m in messages:
+                notify(m)   # ← notify بدل send_message
                 time.sleep(1)
-
-            print(f"📨 تم إرسال {len(messages)} تقرير")
         else:
             print("✅ لا يوجد جديد")
 
-    # ══════════════════════════════════
-    # Calendar API
-    # ══════════════════════════════════
+    # ── Calendar
     print("\n📅 جاري جلب أحداث التقويم...")
     try:
         time.sleep(5)
         raw_events = get_upcoming_events(session)
     except Exception:
-        print("  🔄 إعادة تسجيل الدخول للـ Calendar...")
+        print("  🔄 إعادة تسجيل الدخول...")
         time.sleep(5)
         session    = create_session(username, password)
         time.sleep(3)
@@ -264,20 +235,15 @@ def main():
     save_events(parsed_events)
 
     if new_events:
-        print(f"🆕 {len(new_events)} حدث جديد في التقويم")
-        
-        # الرسالة العادية
-        send_message(build_events_message(new_events))
-        
-        # ← Groq هنا — تقرير ذكي مع تصفح الروابط
-        print("🤖 جاري تلخيص الأحداث بـ Groq...")
+        print(f"🆕 {len(new_events)} حدث جديد")
+        notify(build_events_message(new_events))   # ← notify
+
+        print("🤖 تلخيص بـ Groq...")
         ai_summary = summarize_calendar_events(session, new_events)
         if ai_summary:
-            send_message(
-                f"🤖 <b>تقرير ذكي — {len(new_events)} تحديث جديد</b>\n\n{ai_summary}"
-            )
+            notify(f"🤖 <b>تقرير ذكي — {len(new_events)} تحديث جديد</b>\n\n{ai_summary}")   # ← notify
     else:
-        print("✅ لا أحداث تقويم جديدة")
+        print("✅ لا أحداث جديدة")
 
     print(f"\n⏰ انتهى: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
