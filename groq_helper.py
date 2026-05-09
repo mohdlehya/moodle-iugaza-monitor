@@ -252,24 +252,44 @@ def summarize_calendar_events(session, events: list) -> str:
 
 def chat_with_context(user_question: str, data: dict, events: dict) -> str:
 
+    # ── حاول تحديد المساق المطلوب من السؤال لتقليص الـ context
+    question_lower = user_question.lower()
+    targeted_courses = {}
+
+    for course in data:
+        course_lower = course.lower()
+        # تحقق إذا ذُكر رمز المساق أو كلمة من اسمه في السؤال
+        if (course_lower in question_lower or
+            any(part in question_lower for part in course_lower.split("-") if len(part) > 3)):
+            targeted_courses[course] = data[course]
+
+    # إذا ما حدد مساقاً معيناً، خذ كل المساقات لكن بملفات مختصرة
+    use_data = targeted_courses if targeted_courses else data
+    truncate = not bool(targeted_courses)  # اختصر إذا كل المساقات
+
     # ── خريطة أسماء المساقات
     course_map = "\n".join([f"  - {name}" for name in data.keys()])
 
     # ── بناء context المساقات مع اسم المساق في كل سطر
     courses_text = ""
-    for course, content in data.items():
+    for course, content in use_data.items():
         files   = content.get("files", [])
         assigns = content.get("assignments", [])
         quizzes = content.get("quizzes", [])
 
-        courses_text += f"\n\n{'='*50}"
-        courses_text += f"\n📚 المساق: [{course}]"
-        courses_text += f"\n{'='*50}"
+        # ← اختصر الملفات إذا كانت كل المساقات (اعرض أول 5 فقط)
+        max_files = 5 if truncate else 999
+
+        courses_text += f"\n\n{'='*40}"
+        courses_text += f"\n📚 [{course}]"
+        courses_text += f"\n{'='*40}"
 
         if files:
             courses_text += f"\n  📄 الملفات ({len(files)}):"
-            for f in files:
+            for f in files[:max_files]:
                 courses_text += f"\n    [{course}] {f['name']} → {f['url']}"
+            if truncate and len(files) > max_files:
+                courses_text += f"\n    ... و{len(files) - max_files} ملفات أخرى (اذكر اسم المساق للتفاصيل)"
 
         if assigns:
             courses_text += f"\n  📝 الواجبات ({len(assigns)}):"
@@ -281,12 +301,12 @@ def chat_with_context(user_question: str, data: dict, events: dict) -> str:
             for q in quizzes:
                 courses_text += f"\n    [{course}] {q['name']} → {q['url']}"
 
-    # ── بناء المواعيد القادمة
+    # ── المواعيد القادمة (أقرب 5 فقط)
     now = int(time.time())
     upcoming = sorted(
         [e for e in events.values() if e["timestamp"] > now],
         key=lambda x: x["timestamp"]
-    )[:10]
+    )[:5]
 
     events_text = ""
     for e in upcoming:
@@ -295,33 +315,38 @@ def chat_with_context(user_question: str, data: dict, events: dict) -> str:
         remaining = e["timestamp"] - now
         days      = remaining // 86400
         hours     = (remaining % 86400) // 3600
-        time_left = f"بعد {days}ي {hours}س" if days > 0 else f"بعد {hours} ساعة ⚠️"
+        time_left = f"بعد {days}ي {hours}س" if days > 0 else f"بعد {hours}س ⚠️"
         events_text += (
             f"\n• [{e['type'].upper()}] {e['name']}"
-            f" — {e['course']}"
-            f" — {label}: {dt} ({time_left})"
+            f" — {e['course']} — {label}: {dt} ({time_left})"
             f" | رابط: {e.get('action_url', e['url'])}"
         )
 
     system_prompt = f"""أنت مساعد ذكي لطالب جامعي في الجامعة الإسلامية غزة.
-لديك قاعدة بيانات كاملة من Moodle بما في ذلك روابط كل ملف وواجب وكويز.
+لديك بيانات Moodle الكاملة بما فيها روابط الملفات والواجبات والكويزات.
 
-قائمة المساقات المتاحة:
+المساقات المتاحة:
 {course_map}
 
-قواعد مهمة:
-1. كل سطر في البيانات يبدأ بـ [اسم المساق] — استخدمه للتمييز الدقيق بين المساقات
-2. عند طلب مساق معين ابحث عن رمزه (مثل SDEV3309) أو اسمه في البيانات
-3. أعطِ الروابط الكاملة (https://...) عند طلبها دون تقصير
-4. إذا لم تجد المعلومة بالضبط، قل ذلك بصدق
-5. اكتب بالعربي الفصحى دائماً
+قواعد:
+1. كل سطر يبدأ بـ [اسم المساق] — استخدمه للتمييز
+2. أعطِ الروابط الكاملة عند طلبها
+3. إذا طُلب مساق بعينه ولم تجد ملفاته كاملة، اطلب من الطالب تحديد الرمز (مثل SDEV3305)
+4. اكتب بالعربي دائماً
 
-📚 البيانات الكاملة مع الروابط:
+📚 البيانات:
 {courses_text if courses_text else "لا توجد بيانات"}
 
-📅 المواعيد القادمة:
+📅 أقرب المواعيد:
 {events_text if events_text else "لا توجد مواعيد"}"""
 
+    return _call_groq([
+        {"role": "system", "content": system_prompt},
+        {"role": "user",   "content": user_question}
+    ], max_tokens=700)
+
+
+def _call_groq(messages: list, max_tokens: int = 700) -> str:
     if not GROQ_API_KEY:
         return "⚠️ GROQ_API_KEY غير موجود"
     try:
@@ -332,16 +357,28 @@ def chat_with_context(user_question: str, data: dict, events: dict) -> str:
                 "Content-Type":  "application/json"
             },
             json={
-                "model":    GROQ_MODEL,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user",   "content": user_question}
-                ],
-                "max_tokens":  700,
+                "model":       GROQ_MODEL,
+                "messages":    messages,
+                "max_tokens":  max_tokens,
                 "temperature": 0.3
             },
             timeout=25
         )
-        return r.json()["choices"][0]["message"]["content"].strip()
+        data = r.json()
+
+        # ── اكتشاف الخطأ من Groq
+        if "error" in data:
+            err = data["error"]
+            code = err.get("code", "")
+            msg  = err.get("message", str(err))
+
+            if "rate_limit" in code or "rate_limit" in msg.lower():
+                return "⚠️ تجاوزت حد الطلبات — انتظر دقيقة وأعد المحاولة"
+            if "context_length" in code or "tokens" in msg.lower():
+                return "⚠️ السؤال يحتاج بيانات كبيرة جداً — حاول تحديد المساق مباشرة (مثل: /ai SDEV3305)"
+            return f"⚠️ خطأ من Groq: {msg}"
+
+        return data["choices"][0]["message"]["content"].strip()
+
     except Exception as e:
-        return f"⚠️ خطأ في Groq: {e}"
+        return f"⚠️ خطأ في الاتصال: {e}"        
