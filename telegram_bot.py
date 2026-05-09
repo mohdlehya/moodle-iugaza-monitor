@@ -1,7 +1,8 @@
 import requests, os, json, re, threading, time
 from datetime import datetime
 from dotenv import load_dotenv
-from calendar_api import get_deadlines_message
+from calendar_api import get_deadlines_message, load_previous_events
+from groq_helper import chat_with_context   # ← أضف هذا
 
 load_dotenv()
 
@@ -67,6 +68,9 @@ def handle_command(text: str) -> str:
     text = text.strip()
     data = load_data()
 
+    # ══════════════════════════════════
+    # /start و /help
+    # ══════════════════════════════════
     if text in ["/start", "/help"]:
         return (
             "🤖 <b>أوامر بوت Moodle Monitor</b>\n\n"
@@ -82,9 +86,14 @@ def handle_command(text: str) -> str:
             "/quizzes SDEV2107 — كويزات مساق\n\n"
             "🔍 <b>أدوات:</b>\n"
             "/search كلمة — بحث في كل المحتوى\n"
-            "/last — متى كان آخر تحديث\n"
+            "/last — متى كان آخر تحديث\n\n"
+            "🤖 <b>الذكاء الاصطناعي:</b>\n"     # ← أُضيف هنا
+            "/ai سؤالك — اسأل عن أي شيء في مساقاتك\n"
         )
 
+    # ══════════════════════════════════
+    # /courses
+    # ══════════════════════════════════
     if text == "/courses":
         if not data:
             return "❌ لا توجد بيانات — شغّل main.py أولاً"
@@ -111,6 +120,9 @@ def handle_command(text: str) -> str:
         lines.append(f"📦 <b>الإجمالي: {total_all} عنصر</b>")
         return "\n".join(lines)
 
+    # ══════════════════════════════════
+    # /summary
+    # ══════════════════════════════════
     if text == "/summary":
         if not data:
             return "❌ لا توجد بيانات"
@@ -128,10 +140,16 @@ def handle_command(text: str) -> str:
         lines.append(f"📦 الإجمالي: <b>{total_all}</b> عنصر")
         return "\n".join(lines)
 
+    # ══════════════════════════════════
+    # /updates و /deadlines
+    # ══════════════════════════════════
     if text in ["/updates", "/deadlines"]:
         limit = 15 if text == "/updates" else 10
         return get_deadlines_message(limit=limit)
 
+    # ══════════════════════════════════
+    # /last
+    # ══════════════════════════════════
     if text == "/last":
         if os.path.exists(DATA_FILE):
             mtime = os.path.getmtime(DATA_FILE)
@@ -139,8 +157,20 @@ def handle_command(text: str) -> str:
             return f"⏰ آخر تحديث: <b>{dt}</b>"
         return "❌ لا توجد بيانات بعد"
 
+    # ══════════════════════════════════
+    # /files
+    # ══════════════════════════════════
     if text.startswith("/files"):
         query  = text[6:].strip()
+        if not query:
+            lines = ["📄 <b>جميع الملفات:</b>\n"]
+            for course, c in data.items():
+                items = c.get("files", [])
+                if items:
+                    lines.append(f"\n📚 <b>{course}</b>")
+                    for item in items:
+                        lines.append(f"• <a href='{item['url']}'>{item['name']}</a>")
+            return "\n".join(lines)
         course = _find_course(data, query)
         if not course:
             return f"❌ لم أجد مساقاً باسم: {query}\nاستخدم /courses للقائمة"
@@ -152,8 +182,20 @@ def handle_command(text: str) -> str:
             lines.append(f"• <a href='{item['url']}'>{item['name']}</a>")
         return "\n".join(lines)
 
+    # ══════════════════════════════════
+    # /assignments
+    # ══════════════════════════════════
     if text.startswith("/assignments"):
         query  = text[12:].strip()
+        if not query:
+            lines = ["📝 <b>جميع الواجبات:</b>\n"]
+            for course, c in data.items():
+                items = c.get("assignments", [])
+                if items:
+                    lines.append(f"\n📚 <b>{course}</b>")
+                    for item in items:
+                        lines.append(f"• <a href='{item['url']}'>{item['name']}</a>")
+            return "\n".join(lines)
         course = _find_course(data, query)
         if not course:
             return f"❌ لم أجد مساقاً باسم: {query}"
@@ -165,8 +207,20 @@ def handle_command(text: str) -> str:
             lines.append(f"• <a href='{item['url']}'>{item['name']}</a>")
         return "\n".join(lines)
 
+    # ══════════════════════════════════
+    # /quizzes
+    # ══════════════════════════════════
     if text.startswith("/quizzes"):
         query  = text[8:].strip()
+        if not query:
+            lines = ["❓ <b>جميع الكويزات:</b>\n"]
+            for course, c in data.items():
+                items = c.get("quizzes", [])
+                if items:
+                    lines.append(f"\n📚 <b>{course}</b>")
+                    for item in items:
+                        lines.append(f"• <a href='{item['url']}'>{item['name']}</a>")
+            return "\n".join(lines)
         course = _find_course(data, query)
         if not course:
             return f"❌ لم أجد مساقاً باسم: {query}"
@@ -178,6 +232,9 @@ def handle_command(text: str) -> str:
             lines.append(f"• <a href='{item['url']}'>{item['name']}</a>")
         return "\n".join(lines)
 
+    # ══════════════════════════════════
+    # /search
+    # ══════════════════════════════════
     if text.startswith("/search"):
         keyword = text[7:].strip().lower()
         if not keyword:
@@ -196,9 +253,36 @@ def handle_command(text: str) -> str:
             return f"🔍 لا توجد نتائج لـ: <b>{keyword}</b>"
         return f"🔍 <b>نتائج \"{keyword}\":</b>\n\n" + "\n\n".join(results)
 
+    # ══════════════════════════════════
+    # /ai  ← أُضيف هنا قبل الأخير مباشرة
+    # ══════════════════════════════════
+    if text.startswith("/ai"):
+        question = text[3:].strip()
+        if not question:
+            return (
+                "🤖 <b>اسألني أي شيء عن مساقاتك!</b>\n\n"
+                "أمثلة:\n"
+                "/ai ما هي الكويزات القادمة؟\n"
+                "/ai متى موعد تسليم واجبات SDEV3305؟\n"
+                "/ai كيف أستعد للأسبوع القادم؟\n"
+                "/ai ما هي أصعب المواد هذا الفصل؟\n"
+                "/ai رتّب أولوياتي للأسبوع القادم"
+            )
+        if not data:
+            return "❌ لا توجد بيانات — شغّل main.py أولاً"
+
+        events = load_previous_events()
+        send_message("⏳ جاري التفكير...")
+        answer = chat_with_context(question, data, events)
+        return f"🤖 <b>Groq AI:</b>\n\n{answer}"
+
+    # ══════════════════════════════════
+    # أمر غير معروف ← الأخير دائماً
+    # ══════════════════════════════════
     return "❓ أمر غير معروف — أرسل /help للمساعدة"
 
 
+# ══════════════════════════════════════
 _offset = 0
 
 def start_bot():
