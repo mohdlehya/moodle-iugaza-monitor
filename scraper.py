@@ -27,7 +27,9 @@ def create_session(username: str, password: str) -> requests.Session:
     })
 
     print("🔄 جاري الاتصال بصفحة Moodle...")
-    r = session.get(f"{MOODLE_BASE}/auth/saml2/login.php", allow_redirects=True)
+    r = safe_get(session, f"{MOODLE_BASE}/auth/saml2/login.php", delay=2)
+    if not r:
+        raise Exception("❌ فشل الاتصال بصفحة الدخول")
     print(f"📍 URL بعد التوجيه: {r.url}")
 
     parsed = urlparse(r.url)
@@ -39,11 +41,16 @@ def create_session(username: str, password: str) -> requests.Session:
     print(f"✅ AuthState: {auth_state[:40]}...")
 
     print("🔄 جاري إرسال بيانات الدخول...")
-    r2 = session.post(r.url, data={
-        "username":  username,
-        "password":  password,
-        "AuthState": auth_state,
-    }, allow_redirects=True)
+    r2 = session.post(
+        r.url,
+        data={
+            "username":  username,
+            "password":  password,
+            "AuthState": auth_state,
+        },
+        allow_redirects=True,
+        timeout=30,
+    )
     print(f"📍 URL بعد الدخول: {r2.url}")
 
     soup2     = BeautifulSoup(r2.text, "html.parser")
@@ -58,7 +65,7 @@ def create_session(username: str, password: str) -> requests.Session:
         }
         print(f"📍 ACS URL: {acs_url}")
         time.sleep(2)
-        r3    = session.post(acs_url, data=saml_data, allow_redirects=True)
+        r3    = session.post(acs_url, data=saml_data, allow_redirects=True, timeout=30)
         print(f"📍 URL النهائي: {r3.url}")
         final = r3
     else:

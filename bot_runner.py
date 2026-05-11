@@ -29,7 +29,7 @@ def run_monitor():
             print("⚠️ المراقبة تجاوزت 5 دقائق — تُلغى وتُعاد", flush=True)
         except Exception as e:
             print(f"⚠️ خطأ في المراقبة: {e}", flush=True)
-        time.sleep(6 * 60 * 60)
+        time.sleep(60 * 60 * 6)
 
 
 def run_bot():
