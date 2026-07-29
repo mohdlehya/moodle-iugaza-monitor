@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from database import Base, get_engine
 from models import User, UserSettings, CourseContent, CalendarEvent, NotificationLog
+from crypto import decrypt_credential
 from scripts.migrate_single_user import migrate_single_user
 
 
@@ -155,7 +156,7 @@ def test_migrate_single_user_script(monkeypatch):
         u = session.query(User).filter_by(telegram_chat_id=777888999).first()
         assert u is not None
         assert u.moodle_username == "migrated_user"
-        assert u.moodle_password_encrypted == b"secret123"
+        assert decrypt_credential(u.moodle_password_encrypted) == "secret123"
 
         c = session.query(CourseContent).filter_by(user_id=u.id).first()
         assert "CS101" in c.content_json
