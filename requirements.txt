@@ -1,4 +1,10 @@
-requests
-beautifulsoup4
-python-dotenv
-flask
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+python-dotenv>=1.0.0
+flask>=3.0.0
+sqlalchemy>=2.0.0
+alembic>=1.13.0
+cryptography>=42.0.0
+apscheduler>=3.10.0
+python-telegram-bot>=21.0
+pytest>=8.0.0
