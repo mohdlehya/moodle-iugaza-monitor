@@ -27,16 +27,24 @@ def shutdown_handler(signum, frame):
     sys.exit(0)
 
 
+def run_flask():
+    port = int(os.getenv("PORT", 10000))
+    print(f"🚀 Flask يعمل على port {port}", flush=True)
+    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+
+
 def run_bot():
     while True:
         try:
             bot_app = build_telegram_app()
             if bot_app:
                 print("🤖 البوت يعمل ومستعد لاستقبال الأوامر...", flush=True)
-                bot_app.run_polling()
+                bot_app.run_polling(drop_pending_updates=True)
             else:
                 print("⚠️ تعذر تشغيل البوت — TELEGRAM_BOT_TOKEN غير موجود")
                 break
+        except SystemExit:
+            break
         except Exception as e:
             print(f"⚠️ خطأ في البوت: {e} — إعادة المحاولة بعد 10 ثواني", flush=True)
             time.sleep(10)
@@ -51,14 +59,8 @@ if __name__ == "__main__":
     # Start APScheduler in background
     scheduler_instance = start_scheduler()
 
-    # Start Telegram Bot in daemon thread
-    threading.Thread(target=run_bot, daemon=True).start()
+    # Start Flask Web Health Server in daemon thread
+    threading.Thread(target=run_flask, daemon=True).start()
 
-    # Start Flask Web Health Server
-    port = int(os.getenv("PORT", 10000))
-    print(f"🚀 Flask يعمل على port {port}", flush=True)
-    try:
-        app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
-    finally:
-        if scheduler_instance and scheduler_instance.running:
-            scheduler_instance.shutdown(wait=False)
+    # Start Telegram Bot in main thread
+    run_bot()
