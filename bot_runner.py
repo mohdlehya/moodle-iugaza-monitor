@@ -44,6 +44,9 @@ def run_bot():
             else:
                 print("⚠️ تعذر تشغيل البوت — TELEGRAM_BOT_TOKEN غير موجود")
                 break
+        except Conflict:
+            print("⚠️ Telegram Conflict: يرجى إيقاف أي كائن للبوت يعمل محلياً على جهازك. سيعاد الاتصال خلال 15 ثانية...", flush=True)
+            time.sleep(15)
         except SystemExit:
             break
         except Exception as e:
