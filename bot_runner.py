@@ -1,8 +1,10 @@
+import asyncio
 import time
 import threading
 import sys
 import os
 import signal
+from telegram.error import Conflict
 from telegram_bot import build_telegram_app
 from scheduler import start_scheduler
 from app import app
@@ -37,6 +39,14 @@ def run_flask():
 def run_bot():
     while True:
         try:
+            # Ensure a fresh event loop exists (previous run_polling closes it)
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_closed():
+                    asyncio.set_event_loop(asyncio.new_event_loop())
+            except RuntimeError:
+                asyncio.set_event_loop(asyncio.new_event_loop())
+
             bot_app = build_telegram_app()
             if bot_app:
                 print("🤖 البوت يعمل ومستعد لاستقبال الأوامر...", flush=True)
