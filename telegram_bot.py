@@ -81,6 +81,32 @@ def get_or_create_user_settings(user_id: int) -> UserSettings:
 # Inline Keyboards
 # ══════════════════════════════════════════════════════════════
 
+def build_main_menu_keyboard(user: User = None) -> InlineKeyboardMarkup:
+    keyboard = [
+        [
+            InlineKeyboardButton("📚 المساقات", callback_data="menu:courses"),
+            InlineKeyboardButton("📊 حالة الحساب", callback_data="menu:status"),
+        ],
+        [
+            InlineKeyboardButton("📝 الواجبات", callback_data="menu:assignments"),
+            InlineKeyboardButton("❓ الكويزات", callback_data="menu:quizzes"),
+        ],
+        [
+            InlineKeyboardButton("📄 الملفات", callback_data="menu:files"),
+            InlineKeyboardButton("📅 المواعيد", callback_data="menu:updates"),
+        ],
+        [
+            InlineKeyboardButton("🔄 فحص فوري", callback_data="menu:check"),
+            InlineKeyboardButton("⚙️ الإعدادات", callback_data="menu:settings"),
+        ],
+        [
+            InlineKeyboardButton("🤖 الذكاء الاصطناعي", callback_data="menu:ai_help"),
+            InlineKeyboardButton("✖️ إغلاق اللوحة", callback_data="menu:close"),
+        ],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
 def build_settings_keyboard(settings: UserSettings) -> InlineKeyboardMarkup:
     f_icon = "✅" if settings.notify_files else "❌"
     a_icon = "✅" if settings.notify_assignments else "❌"
@@ -110,6 +136,9 @@ def build_settings_keyboard(settings: UserSettings) -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton("🔇 تصفية وكتم المساقات", callback_data="cfg_courses:menu"),
         ],
+        [
+            InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="menu:main"),
+        ],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -124,6 +153,7 @@ def build_coursefilter_keyboard(courses: list, muted_courses: list) -> InlineKey
             InlineKeyboardButton(f"{icon} | {short_name}", callback_data=f"mute_toggle:{idx}")
         ])
     keyboard.append([InlineKeyboardButton("🔙 العودة للإعدادات", callback_data="cfg_back:settings")])
+    keyboard.append([InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="menu:main")])
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -144,24 +174,13 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         msg = (
             f"👋 <b>أهلاً بك مجدداً ({user.moodle_username or 'طالب'})!</b>\n\n"
-            "📚 <b>أوامر المحتوى والمساقات:</b>\n"
-            "/courses — جميع مساقاتك مع الروابط\n"
-            "/summary — ملخص عددي للمحتوى\n"
-            "/files — ملفاتك المحفوظة\n"
-            "/assignments — الواجبات المسجلة\n"
-            "/quizzes — الكويزات المسجلة\n"
-            "/search كلمة — بحث شامل في مساقاتك\n\n"
-            "📅 <b>المواعيد والتقويم:</b>\n"
-            "/updates — جميع المواعيد القادمة\n"
-            "/deadlines — أقرب المواعيد\n\n"
-            "⚙️ <b>الإعدادات والتحكم:</b>\n"
-            "/settings — لوحة التفضيلات والإشعارات تفاعلية 🎛\n"
-            "/coursefilter — كتم إشعارات مساق محدد 🔇\n"
-            "/setgroqkey — إضافة مفتاح Groq الخاص بك 🔑\n"
-            "/status — حالة المراقبة والخيارات\n"
-            "/pause | /resume — إيقاف/استئناف المراقبة\n"
-            "/logout | /delete_account — خروج / حذف الحساب"
+            "🎮 <b>لوحة التحكم الرئيسية التفاعلية:</b>\n"
+            "انقر على الأزرار أدناه للتنقل المباشر واستخدام ميزات البوت 🚀"
         )
+        reply_markup = build_main_menu_keyboard(user)
+        await update.message.reply_text(msg, parse_mode="HTML", reply_markup=reply_markup, disable_web_page_preview=True)
+        return
+
     await update.message.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True)
 
 
@@ -285,13 +304,115 @@ async def settings_callback_handler(update: Update, context: ContextTypes.DEFAUL
                 reply_markup = build_coursefilter_keyboard(courses, muted)
                 await query.edit_message_reply_markup(reply_markup=reply_markup)
 
-        elif data == "cfg_back:settings":
+        elif data == "cfg_back:settings" or data == "menu:settings":
             reply_markup = build_settings_keyboard(settings)
             await query.edit_message_text(
                 "⚙️ <b>لوحة تفضيلات الإشعارات والذكاء الاصطناعي</b>\n\nانقر على الأزرار أدناه للتعديل المباشر:",
                 parse_mode="HTML",
                 reply_markup=reply_markup
             )
+
+        elif data == "menu:main":
+            reply_markup = build_main_menu_keyboard(user)
+            await query.edit_message_text(
+                f"👋 <b>أهلاً بك مجدداً ({user.moodle_username or 'طالب'})!</b>\n\n"
+                "🎮 <b>لوحة التحكم الرئيسية التفاعلية:</b>\n"
+                "انقر على الأزرار أدناه للتنقل المباشر واستخدام ميزات البوت 🚀",
+                parse_mode="HTML",
+                reply_markup=reply_markup
+            )
+
+        elif data == "menu:close":
+            try:
+                await query.delete_message()
+            except Exception:
+                pass
+
+        elif data == "menu:courses":
+            back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="menu:main")]])
+            content = get_user_content(user.id)
+            if not content:
+                await query.edit_message_text("❌ لا توجد بيانات مساقات محفوظة حتى الآن — استخدم زر 🔄 فحص فوري.", parse_mode="HTML", reply_markup=back_kb)
+                return
+            lines = ["📚 <b>قائمة المساقات المسجلة:</b>\n"]
+            for idx, (course_name, cdata) in enumerate(content.items(), 1):
+                url = cdata.get("url", "#")
+                lines.append(f"{idx}. <a href='{url}'>{course_name}</a>")
+            lines.append("\n💡 انقر على اسم المساق لفتحه مباشرة في Moodle.")
+            await query.edit_message_text("\n".join(lines), parse_mode="HTML", disable_web_page_preview=True, reply_markup=back_kb)
+
+        elif data == "menu:status":
+            back_kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 تحديث الحالة", callback_data="menu:status")],
+                [InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="menu:main")]
+            ])
+            has_groq = bool(user.groq_api_key_encrypted or os.getenv("GROQ_API_KEY"))
+            last_check = user.last_check_at.strftime("%Y-%m-%d %H:%M:%S") if user.last_check_at else "لم يُفحص بعد"
+            err = f"⚠️ {user.last_error}" if user.last_error else "✅ لا توجد أخطاء"
+            msg = (
+                "📊 <b>حالة الحساب والمراقبة الحالية:</b>\n\n"
+                f"👤 <b>اسم المستخدم:</b> <code>{user.moodle_username}</code>\n"
+                f"⚡ <b>حالة الحساب:</b> {user.status.upper()}\n"
+                f"⏰ <b>آخر فحص:</b> {last_check}\n"
+                f"🔑 <b>مفتاح Groq AI:</b> {'✅ مفعل' if has_groq else '❌ غير مضاف'}\n"
+                f"🔍 <b>سجل المراقبة:</b> {err}"
+            )
+            await query.edit_message_text(msg, parse_mode="HTML", reply_markup=back_kb)
+
+        elif data == "menu:assignments":
+            back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="menu:main")]])
+            content = get_user_content(user.id)
+            items = []
+            for c_name, cdata in content.items():
+                for a in cdata.get("assignments", []):
+                    items.append(f"📝 <b>{a.get('title','واجب')}</b>\n   📚 المساق: {c_name}\n   🔗 <a href='{a.get('url','#')}'>رابط الصفحة</a>")
+            msg = "📝 <b>الواجبات المسجلة:</b>\n\n" + ("\n\n".join(items[:15]) if items else "لا توجد واجبات جديدة مسجلة حالياً.")
+            await query.edit_message_text(msg, parse_mode="HTML", disable_web_page_preview=True, reply_markup=back_kb)
+
+        elif data == "menu:quizzes":
+            back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="menu:main")]])
+            content = get_user_content(user.id)
+            items = []
+            for c_name, cdata in content.items():
+                for q in cdata.get("quizzes", []):
+                    items.append(f"❓ <b>{q.get('title','كويز')}</b>\n   📚 المساق: {c_name}\n   🔗 <a href='{q.get('url','#')}'>رابط الصفحة</a>")
+            msg = "❓ <b>الكويزات المسجلة:</b>\n\n" + ("\n\n".join(items[:15]) if items else "لا توجد كويزات جديدة مسجلة حالياً.")
+            await query.edit_message_text(msg, parse_mode="HTML", disable_web_page_preview=True, reply_markup=back_kb)
+
+        elif data == "menu:files":
+            back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="menu:main")]])
+            content = get_user_content(user.id)
+            items = []
+            for c_name, cdata in content.items():
+                for f in cdata.get("files", []):
+                    items.append(f"📄 <a href='{f.get('url','#')}'>{f.get('name','ملف')}</a> ({c_name})")
+            msg = "📄 <b>الملفات المحفوظة:</b>\n\n" + ("\n".join(items[:20]) if items else "لا توجد ملفات جديدة مسجلة حالياً.")
+            await query.edit_message_text(msg, parse_mode="HTML", disable_web_page_preview=True, reply_markup=back_kb)
+
+        elif data == "menu:updates":
+            back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="menu:main")]])
+            msg = get_deadlines_message(limit=10)
+            await query.edit_message_text(msg, parse_mode="HTML", disable_web_page_preview=True, reply_markup=back_kb)
+
+        elif data == "menu:check":
+            back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="menu:main")]])
+            await query.edit_message_text("🔄 <b>جاري تسجيل الدخول إلى Moodle وفحص مساقاتك الآن...</b>\nستصلك الإشعارات فور اكتمال الفحص.", parse_mode="HTML", reply_markup=back_kb)
+            from scheduler import scheduled_user_job
+            threading.Thread(target=scheduled_user_job, args=(user.id,), daemon=True).start()
+
+        elif data == "menu:ai_help":
+            back_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="menu:main")]])
+            msg = (
+                "🤖 <b>خدمة الذكاء الاصطناعي (Groq AI - Llama-3):</b>\n\n"
+                "يمكنك سؤال البوت عن مساقاتك، الواجبات، الملفات، والمواعيد مباشرة عبر الأمر:\n"
+                "<code>/ai سؤالك هنا</code>\n\n"
+                "💡 <b>أمثلة:</b>\n"
+                "• <code>/ai ما هي الواجبات المطلوبة مني هذا الأسبوع؟</code>\n"
+                "• <code>/ai ملخص مساق شبكات الحاسوب</code>\n"
+                "• <code>/ai هل لدي أي كويز قادم؟</code>\n\n"
+                "🔑 لإضافة مفتاحك المجاني الخاط بك أرسل: /setgroqkey"
+            )
+            await query.edit_message_text(msg, parse_mode="HTML", reply_markup=back_kb)
 
 
 # ══════════════════════════════════════════════════════════════

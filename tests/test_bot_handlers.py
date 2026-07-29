@@ -68,7 +68,7 @@ def test_start_command_active_user(db_session):
     update.message.reply_text.assert_called_once()
     call_args = update.message.reply_text.call_args[0][0]
     assert "active_student" in call_args
-    assert "/courses" in call_args
+    assert "لوحة التحكم" in call_args
 
 
 def test_status_command(db_session):

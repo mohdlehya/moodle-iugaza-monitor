@@ -84,7 +84,7 @@ def test_inline_keyboard_builders(db_session):
     courses = ["CS101", "MATH201", "PHYS301"]
     kb_courses = build_coursefilter_keyboard(courses, st.muted_courses)
     assert kb_courses is not None
-    # 3 courses + 1 back button = 4 rows
-    assert len(kb_courses.inline_keyboard) == 4
+    # 3 courses + 1 back to settings + 1 back to main menu = 5 rows
+    assert len(kb_courses.inline_keyboard) == 5
     assert "🔇" in kb_courses.inline_keyboard[1][0].text
     assert "✅" in kb_courses.inline_keyboard[0][0].text
