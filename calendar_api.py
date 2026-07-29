@@ -128,8 +128,14 @@ def save_events(events: list, path="events.json"):
     os.replace(tmp, path)
 
 
-def find_new_events(old: dict, new: list) -> list:
-    return [e for e in new if str(e["id"]) not in old]
+def find_new_events(old: dict | list, new: list) -> list:
+    if isinstance(old, list):
+        old_ids = {str(e["id"]) for e in old if isinstance(e, dict) and "id" in e}
+    elif isinstance(old, dict):
+        old_ids = set(old.keys())
+    else:
+        old_ids = set()
+    return [e for e in new if str(e["id"]) not in old_ids]
 
 
 def build_events_message(events: list) -> str:
