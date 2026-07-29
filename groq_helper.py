@@ -9,10 +9,27 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL   = "llama-3.1-8b-instant"
 GROQ_URL     = "https://api.groq.com/openai/v1/chat/completions"
 
+from crypto import mask_secret
+
+def validate_groq_key(api_key: str) -> bool:
+    """Test if a user-supplied Groq API key is valid by hitting the models endpoint."""
+    if not api_key or not isinstance(api_key, str) or not api_key.strip():
+        return False
+    try:
+        r = requests.get(
+            "https://api.groq.com/openai/v1/models",
+            headers={"Authorization": f"Bearer {api_key.strip()}"},
+            timeout=10
+        )
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
 if not GROQ_API_KEY:
     print("⚠️ GROQ_API_KEY غير موجود في environment variables")
 else:
-    print(f"✅ GROQ_API_KEY موجود: {GROQ_API_KEY[:8]}...", flush=True)
+    print(f"✅ GROQ_API_KEY موجود: {mask_secret(GROQ_API_KEY)}", flush=True)
 
 
 # ══════════════════════════════════════
