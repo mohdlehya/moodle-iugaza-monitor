@@ -6,6 +6,7 @@ import signal
 from telegram_bot import build_telegram_app
 from scheduler import start_scheduler
 from app import app
+from database import init_db
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -55,6 +56,9 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, shutdown_handler)
     if hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, shutdown_handler)
+
+    # Initialize database tables if missing
+    init_db()
 
     # Start APScheduler in background
     scheduler_instance = start_scheduler()

@@ -52,3 +52,11 @@ def get_db_context():
         raise
     finally:
         db.close()
+
+
+def init_db():
+    """Ensure all SQLAlchemy tables are created on database engine."""
+    import models  # noqa: F401
+    engine = get_engine()
+    Base.metadata.create_all(bind=engine)
+    print("✅ Database tables verified and created.", flush=True)
