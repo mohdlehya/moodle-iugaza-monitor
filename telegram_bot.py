@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import Conflict
 from telegram.ext import (
     Application,
     ApplicationBuilder,
@@ -869,6 +870,13 @@ async def delete_account_command(update: Update, context: ContextTypes.DEFAULT_T
 # Application Build & Startup
 # ══════════════════════════════════════════════════════════════
 
+async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if isinstance(context.error, Conflict):
+        print("⚠️ Telegram Conflict: يرجى إيقاف أي كائن للبوت يعمل محلياً على جهازك.", flush=True)
+    else:
+        print(f"⚠️ Telegram Error: {context.error}", flush=True)
+
+
 def build_telegram_app() -> Application:
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not token:
@@ -928,6 +936,8 @@ def build_telegram_app() -> Application:
     app.add_handler(CommandHandler("admin_users", admin_users_command))
     app.add_handler(CommandHandler("admin_broadcast", admin_broadcast_command))
     app.add_handler(CommandHandler("admin_retry", admin_retry_command))
+
+    app.add_error_handler(global_error_handler)
 
     return app
 
