@@ -1,6 +1,7 @@
 import os
 import re
 import asyncio
+import threading
 import requests
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
@@ -24,7 +25,7 @@ from crypto import encrypt_credential, decrypt_credential, mask_secret
 from services.user_service import delete_user_by_telegram_id
 from scraper import create_session
 from groq_helper import chat_with_context, validate_groq_key
-from calendar_api import parse_events, find_new_events, build_events_message
+from calendar_api import parse_events, find_new_events, build_events_message, get_deadlines_message
 
 load_dotenv()
 
@@ -509,15 +510,31 @@ async def register_password_received(update: Update, context: ContextTypes.DEFAU
             user.moodle_password_encrypted = enc_password
             user.status = "active"
             user.last_error = None
+            u_id = user.id
+
+    from scheduler import scheduled_user_job
+    threading.Thread(target=scheduled_user_job, args=(u_id,), daemon=True).start()
 
     await status_msg.edit_text(
         "🎉 <b>تم تسجيل حسابك بنجاح!</b>\n\n"
-        "✅ تم التثبت من الحساب وتفعيل نظام المراقبة.\n"
+        "✅ تم التثبت من الحساب وجاري فحص ومسح مساقاتك الآن تلقائياً...\n"
         "💡 ننصحك بإضافة مفتاح Groq الخاص بك لتشغيل الذكاء الاصطناعي عبر الأمر /setgroqkey.\n\n"
         "أرسل /help لرؤية جميع الأوامر.",
         parse_mode="HTML"
     )
     return ConversationHandler.END
+
+
+async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    user = get_user_by_chat_id(chat_id)
+    if not user or user.status != "active":
+        await update.message.reply_text("❌ حسابك غير نَشِط أو غير مسجل. أرسل /register للتسجيل.", parse_mode="HTML")
+        return
+
+    await update.message.reply_text("🔄 <b>جاري تسجيل الدخول إلى Moodle وفحص مساقاتك الآن...</b>\nستصلك الإشعارات فور اكتمال الفحص.", parse_mode="HTML")
+    from scheduler import scheduled_user_job
+    threading.Thread(target=scheduled_user_job, args=(user.id,), daemon=True).start()
 
 
 async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -912,6 +929,8 @@ def build_telegram_app() -> Application:
 
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("check", check_command))
+    app.add_handler(CommandHandler("refresh", check_command))
     app.add_handler(CommandHandler("courses", courses_command))
     app.add_handler(CommandHandler("summary", summary_command))
     app.add_handler(CommandHandler("updates", updates_or_deadlines_command))

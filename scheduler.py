@@ -1,5 +1,6 @@
 import random
 import time
+from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from database import get_db_context
 from models import User
@@ -39,18 +40,19 @@ def sync_user_jobs():
         for uid in active_user_ids:
             job_id = f"user_job_{uid}"
             if not scheduler.get_job(job_id):
-                jitter = random.randint(0, 1800)
+                jitter = random.randint(0, 120)
                 scheduler.add_job(
                     scheduled_user_job,
                     "interval",
                     hours=6,
+                    next_run_time=datetime.now(),
                     args=[uid],
                     id=job_id,
                     name=f"User Check {uid}",
                     replace_existing=True,
                     jitter=jitter,
                 )
-                print(f"🗓 Scheduled recurring 6-hour monitoring job for User ID {uid} (jitter offset ~{jitter}s)")
+                print(f"🗓 Scheduled recurring 6-hour monitoring job for User ID {uid} (immediate first run)")
 
     except Exception as e:
         print(f"⚠️ Scheduler sync error: {e}")
