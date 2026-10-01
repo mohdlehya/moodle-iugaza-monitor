@@ -631,7 +631,7 @@ async def register_password_received(update: Update, context: ContextTypes.DEFAU
             user.moodle_password_encrypted = enc_password
             user.status = "active"
             user.last_error = None
-            u_id = user.id
+        u_id = user.id
 
     from scheduler import scheduled_user_job
     threading.Thread(target=scheduled_user_job, args=(u_id,), daemon=True).start()
