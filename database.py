@@ -9,13 +9,19 @@ _engine = None
 _current_db_url = None
 
 
-def get_engine():
-    global _engine, _current_db_url
+def get_db_url():
     url = os.getenv("DATABASE_URL", "sqlite:///./moodle.db")
-
-    # Fix for Render / Heroku legacy "postgres://" URIs
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
+    return url
+
+
+DATABASE_URL = get_db_url()
+
+
+def get_engine():
+    global _engine, _current_db_url
+    url = get_db_url()
 
     if _engine is None or _current_db_url != url:
         connect_args = {}
