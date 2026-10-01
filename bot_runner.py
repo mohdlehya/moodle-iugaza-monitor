@@ -13,9 +13,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-print(f"🔑 GROQ_API_KEY: {'✅ موجود' if os.getenv('GROQ_API_KEY') else '❌ غير موجود'}", flush=True)
-print(f"🤖 BOT_TOKEN:    {'✅ موجود' if os.getenv('TELEGRAM_BOT_TOKEN') else '❌ غير موجود'}", flush=True)
-print(f"📚 MOODLE_URL:   {os.getenv('MOODLE_URL', '❌ غير موجود')}", flush=True)
+print(f"🔑 GROQ_API_KEY:       {'✅ موجود' if os.getenv('GROQ_API_KEY') else '❌ غير موجود'}", flush=True)
+print(f"🔑 GEMINI_API_KEY:     {'✅ موجود' if os.getenv('GEMINI_API_KEY') else '❌ غير موجود'}", flush=True)
+print(f"🔑 OPENROUTER_API_KEY: {'✅ موجود' if os.getenv('OPENROUTER_API_KEY') else '❌ غير موجود'}", flush=True)
+print(f"🔑 OPENAI_API_KEY:     {'✅ موجود' if os.getenv('OPENAI_API_KEY') else '❌ غير موجود'}", flush=True)
+print(f"🤖 BOT_TOKEN:          {'✅ موجود' if os.getenv('TELEGRAM_BOT_TOKEN') else '❌ غير موجود'}", flush=True)
+print(f"📚 MOODLE_URL:         {os.getenv('MOODLE_URL', '❌ غير موجود')}", flush=True)
 
 scheduler_instance = None
 

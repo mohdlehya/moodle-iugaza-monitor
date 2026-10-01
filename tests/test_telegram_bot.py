@@ -62,6 +62,23 @@ def test_groq_key_validation_helper():
     assert validate_groq_key("invalid_key_string") is False
 
 
+def test_ai_provider_detection():
+    from groq_helper import detect_provider, get_provider_display_name, validate_ai_key
+    assert detect_provider("gsk_mygroqkey123") == "groq"
+    assert detect_provider("AIzaSyTestKey123") == "gemini"
+    assert detect_provider("sk-or-v1-testkey123") == "openrouter"
+    assert detect_provider("sk-proj-testkey123") == "openai"
+
+    assert get_provider_display_name("AIzaSyTestKey123") == "Google Gemini"
+    assert get_provider_display_name("gsk_mygroqkey123") == "Groq (Llama-3)"
+    assert get_provider_display_name("sk-or-v1-testkey123") == "OpenRouter"
+    assert get_provider_display_name("sk-proj-testkey123") == "OpenAI (ChatGPT)"
+
+    valid, name = validate_ai_key("")
+    assert valid is False
+    assert name == ""
+
+
 def test_user_deletion_by_telegram_id(db_session):
     with get_db_context() as db:
         u = User(telegram_chat_id=999000111, moodle_username="del_user", status="active")

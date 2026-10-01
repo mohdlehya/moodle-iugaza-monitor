@@ -24,7 +24,7 @@ from models import User, UserSettings, CourseContent, CalendarEvent, Notificatio
 from crypto import encrypt_credential, decrypt_credential, mask_secret
 from services.user_service import delete_user_by_telegram_id
 from scraper import create_session
-from groq_helper import chat_with_context, validate_groq_key
+from groq_helper import chat_with_context, validate_groq_key, validate_ai_key, get_provider_display_name
 from calendar_api import parse_events, find_new_events, build_events_message, get_deadlines_message
 
 load_dotenv()
@@ -676,11 +676,17 @@ async def setgroqkey_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     await update.message.reply_text(
-        "🔑 <b>إعداد مفتاح Groq API الخاص بك (مجاني)</b>\n\n"
-        "خطوات الحصول على المفتاح في دقيقتين:\n"
-        "1️⃣ افتح الرابط: <a href='https://console.groq.com/keys'>console.groq.com/keys</a>\n"
-        "2️⃣ سجّل دخولك واضغط <b>Create API Key</b> ثم انسخ المفتاح.\n\n"
-        "أرسل المفتاح هنا الآن (يبدأ بـ <code>gsk_</code>):\n\n"
+        "🔑 <b>إعداد مفتاح الذكاء الاصطناعي (AI API Key)</b>\n\n"
+        "يدعم البوت جميع المزودات التالية بمفاتيح مجانية:\n\n"
+        "1️⃣ <b>Google Gemini (مجاني وسريع - موصى به):</b>\n"
+        "   • <a href='https://aistudio.google.com/apikey'>aistudio.google.com/apikey</a> (يبدأ بـ <code>AIza</code>)\n\n"
+        "2️⃣ <b>Groq Llama-3 (مجاني وفائق السرعة):</b>\n"
+        "   • <a href='https://console.groq.com/keys'>console.groq.com/keys</a> (يبدأ بـ <code>gsk_</code>)\n\n"
+        "3️⃣ <b>OpenRouter (نماذج مجانية متعددة):</b>\n"
+        "   • <a href='https://openrouter.ai/keys'>openrouter.ai/keys</a> (يبدأ بـ <code>sk-or-</code>)\n\n"
+        "4️⃣ <b>OpenAI (ChatGPT):</b>\n"
+        "   • <a href='https://platform.openai.com/api-keys'>platform.openai.com/api-keys</a> (يبدأ بـ <code>sk-</code>)\n\n"
+        "أرسل مفتاحك هنا الآن وسيتم التعرف عليه وتفعيله تلقائياً:\n\n"
         "🛡 <i>سيتم حذف رسالتك فور استلامها وتشفير المفتاح at-rest.</i>\n"
         "<i>يمكنك إرسال /cancel للإلغاء.</i>",
         parse_mode="HTML",
@@ -696,13 +702,13 @@ async def setgroqkey_received(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     await safe_delete_message(context, chat_id, msg_id)
 
-    status_msg = await update.message.reply_text("⏳ <b>جاري فحص صلاحية مفتاح Groq...</b>", parse_mode="HTML")
+    status_msg = await update.message.reply_text("⏳ <b>جاري فحص صلاحية المفتاح والاتصال بالمزود...</b>", parse_mode="HTML")
 
-    is_valid = await asyncio.to_thread(validate_groq_key, raw_key)
+    is_valid, provider_name = await asyncio.to_thread(validate_ai_key, raw_key)
     if not is_valid:
         await status_msg.edit_text(
-            "❌ <b>المفتاح غير صالح:</b> تعذر الاتصال بـ Groq API باستخدام هذا المفتاح.\n"
-            "تأكد من نسخه بالكامل وأرسل /setgroqkey للتحاول مجدداً.",
+            "❌ <b>المفتاح غير صالح أو تعذر الاتصال بالمزود.</b>\n"
+            "تأكد من نسخ المفتاح كاملاً (Gemini، Groq، OpenRouter، أو OpenAI) وأرسل /setkey للمحاولة مجدداً.",
             parse_mode="HTML"
         )
         return ConversationHandler.END
@@ -715,9 +721,10 @@ async def setgroqkey_received(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     masked = mask_secret(raw_key)
     await status_msg.edit_text(
-        f"✅ <b>تم تفعيل مفتاح Groq بنجاح!</b>\n\n"
-        f"🔑 المفتاح المحفوظ: <code>{masked}</code>\n"
-        "سيتم استخدام مفتاحك الخاص لجميع أسئلة /ai والملخصات التلقائية بدون حدود خادم مشتركة.",
+        f"✅ <b>تم تفعيل مفتاح {provider_name} بنجاح!</b>\n\n"
+        f"🔑 المفتاح المشفر: <code>{masked}</code>\n"
+        f"🤖 المزود المعتمد: <b>{provider_name}</b>\n\n"
+        "سيتم استخدام هذا المفتاح لجميع أسئلة /ai والملخصات الذكية بدون قيود مشتركة.",
         parse_mode="HTML"
     )
     return ConversationHandler.END
@@ -729,9 +736,9 @@ async def removegroqkey_command(update: Update, context: ContextTypes.DEFAULT_TY
         user = db.query(User).filter(User.telegram_chat_id == chat_id).first()
         if user and user.groq_api_key_encrypted:
             user.groq_api_key_encrypted = None
-            await update.message.reply_text("✅ تم إزالة مفتاح Groq الخاص بك والعودة إلى المفتاح المباشر.", parse_mode="HTML")
+            await update.message.reply_text("✅ تم إزالة مفتاح الذكاء الاصطناعي الخاص بك والعودة إلى المفتاح المباشر.", parse_mode="HTML")
             return
-    await update.message.reply_text("ℹ️ ليس لديك مفتاح Groq خاص محفوظ حالياً.", parse_mode="HTML")
+    await update.message.reply_text("ℹ️ ليس لديك مفتاح ذكاء اصطناعي خاص محفوظ حالياً.", parse_mode="HTML")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -915,9 +922,16 @@ async def ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     events_list = get_user_events(user.id)
     events_dict = {str(i): e for i, e in enumerate(events_list)}
 
-    status_msg = await update.message.reply_text("⏳ <b>جاري التفكير مع Groq AI...</b>", parse_mode="HTML")
-    answer = await asyncio.to_thread(chat_with_context, question, data, events_dict)
-    await status_msg.edit_text(f"🤖 <b>Groq AI:</b>\n\n{answer}", parse_mode="HTML")
+    user_key = None
+    if user.groq_api_key_encrypted:
+        try:
+            user_key = decrypt_credential(user.groq_api_key_encrypted)
+        except Exception:
+            user_key = None
+
+    status_msg = await update.message.reply_text("⏳ <b>جاري التفكير والتحليل بالذكاء الاصطناعي...</b>", parse_mode="HTML")
+    answer, provider_name = await asyncio.to_thread(chat_with_context, question, data, events_dict, user_key)
+    await status_msg.edit_text(f"🤖 <b>{provider_name}:</b>\n\n{answer}", parse_mode="HTML")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -934,10 +948,14 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     settings = get_or_create_user_settings(user.id)
 
-    groq_status = "غير مُفاد ❌ (يمكنك إضافته عبر /setgroqkey)"
+    ai_status = "مفتاح النظام الاحتياطي ⚙️ (أضف مفتاحك الخاص عبر /setkey)"
     if user.groq_api_key_encrypted:
-        raw = decrypt_credential(user.groq_api_key_encrypted)
-        groq_status = f"مُفعَّل ✅ (<code>{mask_secret(raw)}</code>)"
+        try:
+            raw = decrypt_credential(user.groq_api_key_encrypted)
+            p_name = get_provider_display_name(raw)
+            ai_status = f"✅ {p_name} (<code>{mask_secret(raw)}</code>)"
+        except Exception:
+            ai_status = "✅ مضاف (مشفر)"
 
     last_chk = user.last_check_at.strftime("%Y-%m-%d %H:%M") if user.last_check_at else "لم يُفحص بعد"
     err = f"\n⚠️ <b>آخر خطأ:</b> {user.last_error}" if user.last_error else ""
@@ -950,7 +968,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👤 <b>اسم المستخدم:</b> {user.moodle_username}\n"
         f"⚡ <b>حالة الحساب:</b> {user.status.upper()}\n"
         f"⏰ <b>آخر فحص:</b> {last_chk}\n"
-        f"🔑 <b>مفتاح Groq:</b> {groq_status}\n\n"
+        f"🤖 <b>مزود الذكاء الاصطناعي:</b> {ai_status}\n\n"
         f"⚙️ <b>التفضيلات المفعلة:</b>\n"
         f"  • الملفات: {'✅' if settings.notify_files else '❌'}  |  الواجبات: {'✅' if settings.notify_assignments else '❌'}\n"
         f"  • الكويزات: {'✅' if settings.notify_quizzes else '❌'}  |  المجلدات: {'✅' if settings.notify_folders else '❌'}\n"
@@ -1033,9 +1051,13 @@ def build_telegram_app() -> Application:
         fallbacks=[CommandHandler("cancel", cancel_conversation)],
     )
 
-    # Groq Key conversation
-    groq_handler = ConversationHandler(
-        entry_points=[CommandHandler("setgroqkey", setgroqkey_start)],
+    # Groq & AI Key conversation
+    ai_key_handler = ConversationHandler(
+        entry_points=[
+            CommandHandler("setkey", setgroqkey_start),
+            CommandHandler("setaikey", setgroqkey_start),
+            CommandHandler("setgroqkey", setgroqkey_start),
+        ],
         states={
             SET_GROQ_KEY_STATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, setgroqkey_received)],
         },
@@ -1043,7 +1065,7 @@ def build_telegram_app() -> Application:
     )
 
     app.add_handler(reg_handler)
-    app.add_handler(groq_handler)
+    app.add_handler(ai_key_handler)
 
     # Callback Query Handler for Settings UI & Course Filters
     app.add_handler(CallbackQueryHandler(settings_callback_handler))
@@ -1061,7 +1083,11 @@ def build_telegram_app() -> Application:
     app.add_handler(CommandHandler("quizzes", quizzes_command))
     app.add_handler(CommandHandler("search", search_command))
     app.add_handler(CommandHandler("ai", ai_command))
+    app.add_handler(CommandHandler("setkey", setgroqkey_start))
+    app.add_handler(CommandHandler("setaikey", setgroqkey_start))
     app.add_handler(CommandHandler("setgroqkey", setgroqkey_start))
+    app.add_handler(CommandHandler("removekey", removegroqkey_command))
+    app.add_handler(CommandHandler("removeaikey", removegroqkey_command))
     app.add_handler(CommandHandler("removegroqkey", removegroqkey_command))
     app.add_handler(CommandHandler("settings", settings_command))
     app.add_handler(CommandHandler("coursefilter", coursefilter_command))
