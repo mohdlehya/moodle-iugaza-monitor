@@ -133,8 +133,7 @@ def notify_user(chat_id: int | str, msg: str, user_id: int = None, notification_
                     log_entry = NotificationLog(
                         user_id=user_id,
                         notification_type=notification_type,
-                        status="sent",
-                        content_preview=msg[:100]
+                        content_summary=msg[:100]
                     )
                     db.add(log_entry)
             except Exception as e:

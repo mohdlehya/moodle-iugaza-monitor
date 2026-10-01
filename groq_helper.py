@@ -54,7 +54,12 @@ def ask_groq(prompt: str, max_tokens: int = 500) -> str:
             },
             timeout=20
         )
-        return r.json()["choices"][0]["message"]["content"].strip()
+        data = r.json()
+        if "choices" in data and data["choices"]:
+            return data["choices"][0]["message"]["content"].strip()
+        if "error" in data:
+            print(f"⚠️ Groq error: {data['error'].get('message', data['error'])}")
+        return ""
     except Exception as e:
         print(f"⚠️ Groq error: {e}")
         return ""
