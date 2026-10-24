@@ -132,3 +132,69 @@ def test_calendar_events_parsing_and_diff():
 
     assert len(new_events) == 1
     assert new_events[0]["name"] == "Project Submission"
+
+
+from scraper import get_courses, _clean_course_name
+
+
+def test_clean_course_name():
+    assert _clean_course_name("<span>Cloud &amp; Distributed</span>") == "Cloud & Distributed"
+    assert _clean_course_name("   Software Security (SDEV 4303)   ") == "Software Security (SDEV 4303)"
+    assert _clean_course_name("") == ""
+
+
+def test_get_courses_ajax_mock():
+    class MockAjaxSession:
+        def get(self, url, timeout=30):
+            return MockResponse('{"sesskey":"test_sesskey_123"}')
+
+        def post(self, url, json=None, timeout=30):
+            class JsonResp:
+                status_code = 200
+
+                def json(self):
+                    return [
+                        {
+                            "error": False,
+                            "data": {
+                                "courses": [
+                                    {"id": 4313, "fullname": "Cloud and Distributed Systems (SICT 4313)"},
+                                    {"id": 4303, "fullname": "Software Security (SDEV 4303)"},
+                                    {"id": 1, "fullname": "Site Home"}
+                                ]
+                            }
+                        }
+                    ]
+            return JsonResp()
+
+    courses = get_courses(MockAjaxSession())
+    assert len(courses) == 2
+    names = [c["name"] for c in courses]
+    assert "Cloud and Distributed Systems (SICT 4313)" in names
+    assert "Software Security (SDEV 4303)" in names
+    assert "Site Home" not in names
+
+
+def test_get_courses_html_fallback():
+    class MockHtmlSession:
+        def get(self, url, timeout=30):
+            if "courses.php" in url:
+                html = '''
+                <div>
+                    <a href="/course/view.php?id=1">Site Home</a>
+                    <a href="/course/view.php?id=5001">إدارة الأعمال والتجارة الإلكترونية</a>
+                    <a href="/course/view.php?id=5002">إدارة مشاريع البرمجيات</a>
+                </div>
+                '''
+                return MockResponse(html)
+            return MockResponse("no sesskey here")
+
+        def post(self, url, json=None, timeout=30):
+            raise Exception("No AJAX")
+
+    courses = get_courses(MockHtmlSession())
+    assert len(courses) == 2
+    names = [c["name"] for c in courses]
+    assert "إدارة الأعمال والتجارة الإلكترونية" in names
+    assert "إدارة مشاريع البرمجيات" in names
+

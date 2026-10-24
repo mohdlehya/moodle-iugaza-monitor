@@ -79,25 +79,115 @@ def create_session(username: str, password: str) -> requests.Session:
     raise Exception("❌ فشل تسجيل الدخول")
 
 
+import html
+import re
+
+
+def _clean_course_name(name: str) -> str:
+    if not name:
+        return ""
+    soup = BeautifulSoup(name, "html.parser")
+    clean = soup.get_text(strip=True)
+    clean = html.unescape(clean)
+    clean = re.sub(r'\s+', ' ', clean).strip()
+    return clean
+
+
 def get_courses(session) -> list:
     print("\n🔄 جاري جلب المساقات...")
-    r = safe_get(session, f"{MOODLE_BASE}/my/", delay=3)
-    if not r:
-        raise Exception("❌ فشل جلب صفحة المساقات")
+    courses_by_id = {}
 
-    soup    = BeautifulSoup(r.text, "html.parser")
-    courses = []
-    seen    = set()
+    # 1. Primary approach: Moodle internal AJAX WebService API (Moodle 3.6 - 4.x+)
+    sesskey = None
+    try:
+        from calendar_api import get_sesskey
+        sesskey = get_sesskey(session)
+    except Exception as e:
+        print(f"  ⚠️ تعذر استخراج sesskey: {e}")
 
-    for link in soup.select('a[href*="/course/view.php"]'):
-        name = link.get_text(strip=True)
-        if name:
-            url = link["href"]
-            if not url.startswith("http"):
-                url = f"{MOODLE_BASE}{url}"
-            if url not in seen:
-                seen.add(url)
-                courses.append({"name": name, "url": url})
+    if sesskey:
+        print(f"  🔑 استخدام sesskey: {sesskey[:10]}...")
+        api_url = (
+            f"{MOODLE_BASE}/lib/ajax/service.php"
+            f"?sesskey={sesskey}"
+            f"&info=core_course_get_enrolled_courses_by_timeline_classification"
+        )
+        payload = [
+            {
+                "index": i,
+                "methodname": "core_course_get_enrolled_courses_by_timeline_classification",
+                "args": {
+                    "offset": 0,
+                    "limit": 0,
+                    "classification": cls,
+                    "sort": "fullname"
+                }
+            }
+            for i, cls in enumerate(["all", "allincludinghidden", "inprogress"])
+        ]
+        try:
+            resp = session.post(api_url, json=payload, timeout=30)
+            if resp.status_code == 200:
+                data = resp.json()
+                for item in data:
+                    if isinstance(item, dict) and not item.get("error"):
+                        c_list = item.get("data", {}).get("courses", [])
+                        for c in c_list:
+                            c_id = c.get("id")
+                            if not c_id or str(c_id) == "1":
+                                continue
+                            raw_name = c.get("fullname") or c.get("fullnamedisplay") or c.get("shortname") or ""
+                            c_name = _clean_course_name(raw_name)
+                            if not c_name:
+                                continue
+                            c_url = c.get("viewurl") or f"{MOODLE_BASE}/course/view.php?id={c_id}"
+                            if not c_url.startswith("http"):
+                                c_url = f"{MOODLE_BASE}{c_url}"
+                            courses_by_id[str(c_id)] = {"name": c_name, "url": c_url}
+        except Exception as e:
+            print(f"  ⚠️ استدعاء AJAX للمساقات واجه خطأ: {e}")
 
+    # 2. Secondary approach: Scrape HTML from /my/courses.php and /my/
+    for path in ["/my/courses.php", "/my/"]:
+        try:
+            r = safe_get(session, f"{MOODLE_BASE}{path}", delay=2)
+            if not r:
+                continue
+            soup = BeautifulSoup(r.text, "html.parser")
+            for link in soup.select('a[href*="/course/view.php"]'):
+                href = link.get("href", "")
+                parsed = urlparse(href)
+                params = parse_qs(parsed.query)
+                c_id = params.get("id", [None])[0]
+                if not c_id or str(c_id) == "1":
+                    continue
+                c_name = _clean_course_name(link.get_text(strip=True))
+                if not c_name or c_name.lower() in ["course image", "view", "عرض", "المقرر"]:
+                    continue
+                c_url = f"{MOODLE_BASE}/course/view.php?id={c_id}"
+                if str(c_id) not in courses_by_id or len(c_name) > len(courses_by_id[str(c_id)]["name"]):
+                    courses_by_id[str(c_id)] = {"name": c_name, "url": c_url}
+        except Exception as e:
+            print(f"  ⚠️ فحص صفحة {path} واجه خطأ: {e}")
+
+    # 3. Fallback: If still 0 courses, check upcoming calendar events
+    if not courses_by_id:
+        try:
+            from calendar_api import get_upcoming_events
+            events = get_upcoming_events(session)
+            for ev in events:
+                c = ev.get("course", {})
+                c_id = c.get("id")
+                raw_name = c.get("fullname") or c.get("shortname") or ""
+                c_name = _clean_course_name(raw_name)
+                if c_id and str(c_id) != "1" and c_name:
+                    c_url = c.get("viewurl") or f"{MOODLE_BASE}/course/view.php?id={c_id}"
+                    if not c_url.startswith("http"):
+                        c_url = f"{MOODLE_BASE}{c_url}"
+                    courses_by_id[str(c_id)] = {"name": c_name, "url": c_url}
+        except Exception as e:
+            print(f"  ⚠️ استخراج المساقات من أحداث التقويم واجه خطأ: {e}")
+
+    courses = list(courses_by_id.values())
     print(f"✅ عدد المساقات: {len(courses)}")
     return courses
